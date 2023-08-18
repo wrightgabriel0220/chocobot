@@ -141,6 +141,10 @@ async def pause(ctx):
     else:
         await ctx.send("The bot is not playing anything at the moment.")
 
+@bot.command(name = "queue", help="Display the current queue of songs up the visible queue limit")
+async def queue(ctx):
+    await ctx.send(song_queue.get_queue_report())
+
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
