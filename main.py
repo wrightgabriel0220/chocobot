@@ -48,24 +48,6 @@ ffmpeg_options = {
 # Initializing our ytdl client
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
-class RadioQueue(list):
-    def __init__(self):
-        super().__init__(self)
-
-    async def append(self, url: str):
-        super().append(await YTDLSource.from_url(url))
-
-    def get_queue_report(self):
-        newline = "\n"
-
-        return f"""
-            -> Now playing: {self[0]['title']} <-
-
-            {newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self)) if i > 0])}
-        """
-
-song_queue = RadioQueue()
-
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume = 0.5):
         super().__init__(source, volume)
@@ -80,7 +62,28 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if "entries" in data:
             # take first item from a playlist
             data = data["entries"][0]
-        return { **data, "title": data["title"] if stream else ytdl.prepare_filename(data) }
+        return data
+
+class RadioQueue(list):
+    current_song: YTDLSource
+
+    def __init__(self):
+        super().__init__(self)
+
+    async def append(self, url: str):
+        super().append(await YTDLSource.from_url(url))
+        self.current_song = self[len(self) - 1]
+
+    def get_queue_report(self):
+        newline = "\n"
+
+        return f"""
+            -> Now playing: {self[0]['title']} <-
+
+            {newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self)) if i > 0])}
+        """
+
+song_queue = RadioQueue()
 
 # ctx in all of these methods refers to the command context. https://discordpy.readthedocs.io/en/stable/ext/commands/api.html#discord.ext.commands.Context
 @bot.command(name = 'join', help='Tells the bot to join the voice channel')
@@ -92,7 +95,6 @@ async def join(ctx):
         channel = ctx.message.author.voice.channel
     await channel.connect()
 
-
 @bot.command(name = 'leave', help='To make the bot leave the voice channel')
 async def leave(ctx):
     voice_client = ctx.message.guild.voice_client
@@ -102,43 +104,34 @@ async def leave(ctx):
         await ctx.send('The bot is not connected to a voice channel.')
 
 @bot.command(name = 'play', help = 'To play a new song, paused song, or paused queue')
-async def play(ctx, url):
-    # Join the call if we're not already joined
-    voice_client = ctx.message.guild.voice_client
-    if not voice_client.is_connected():
-        join(ctx)
+async def play(ctx, url = None):
+        voice_client = ctx.message.guild.voice_client
 
-    # Add the current song to the queue if a song url was provided
-    if url is not None:
-        song_queue.put(url)
-    # Start the queue if it's not already playing
-    if voice_client.is_paused():
-        voice_client.resume()
-    elif not voice_client.is_playing():
-        play_song(ctx, song_queue[song_queue.qsize[0]])
+        # Add the current song to the queue if a song url was provided
+        if url is not None:
+            song_queue.append(url)
+        
+        # Start the queue if it's not already playing
+        if voice_client.is_paused():
+            voice_client.resume()
+        elif not voice_client.is_playing():
+            voice_client.play(discord.FFmpegPCMAudio(
+                executable = "ffmpeg.exe",
+                source = ytdl.prepare_filename(song_queue.current_song),
+                options = ffmpeg_options
+            ))
+            await ctx.send(f"**-> Now Playing: {song_queue[len(song_queue) - 1].title} <-**")
+
+@play.error
+async def play_error(ctx, error):
+    if not ctx.message.guild.voice_client:
+        await ctx.send(f"The bot is not connected to a voice channel. Use {COMMAND_PREFIX}join to invite the bot to a channel and try again!")
 
 @bot.command(name = 'add_song', help = 'To add a song to the front of the queue')
 async def add_song(ctx, url):
     await song_queue.append(url)
 
     await ctx.send(song_queue.get_queue_report())
-
-
-@bot.command(name = 'play_song', help='!play_song [song-url] - plays a single song given a valid Youtube URL')
-async def play_song(ctx, url):
-    try:
-        server = ctx.message.guild
-        print("server: ", server)
-        voice_client = server.voice_client
-
-        async with ctx.typing():
-            filename = await YTDLSource.from_url(url, loop = bot.loop)
-            voice_client.play(discord.FFmpegPCMAudio(executable = "ffmpeg.exe", source = filename, options = ffmpeg_options))
-            
-        await ctx.send(f'**Now playing:** {filename}')
-    except (RuntimeError, TypeError, NameError):
-        print(f"The bot is not connected to a voice channel. RuntimeError: {RuntimeError | 'N/A'} - TypeError: {TypeError | 'N/A'} - NameError: {NameError | 'N/A'}")
-
 
 @bot.command(name = 'pause', help='Pauses the song currently playing if there is one')
 async def pause(ctx):
