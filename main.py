@@ -1,9 +1,9 @@
 import asyncio
+from queue import Queue
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import os
 from dotenv import load_dotenv
-import youtube_dl
 import yt_dlp
 
 load_dotenv()
@@ -11,6 +11,7 @@ load_dotenv()
 # Get the API token from the .env file
 DISCORD_TOKEN = os.getenv("discord_token")
 COMMAND_PREFIX = os.getenv("command_prefix")
+VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
 
 
 # Setting the intents. These should match the intents on the Discord Developer Portal
@@ -31,7 +32,7 @@ ytdl_format_options = {
     'noplaylist': True,
     'nocheckcertificate': True,
     'ignoreerrors': False,
-    'logtostderr': False,
+    'logtostderr': True,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
@@ -46,6 +47,26 @@ ffmpeg_options = {
 
 # Initializing our ytdl client
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
+
+class RadioQueue(list):
+    def __init__(self):
+        super().__init__(self)
+
+    async def append(self, url: str):
+        super().append(await YTDLSource.from_url(url))
+
+    def get_queue_report(self):
+        newline = "\n"
+
+        return f"""
+            >>> Now playing: {self[0]} <<<
+
+            {
+                f",{newline}".join([f"{iter}: {self[iter]}" for iter in range(len(self)) if iter > 0])
+            }
+        """
+
+song_queue = RadioQueue()
 
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume = 0.5):
@@ -64,7 +85,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data['entries'][0]
         filename = data['title'] if stream else ytdl.prepare_filename(data)
         return filename
-    
+
+# ctx in all of these methods refers to the command context. https://discordpy.readthedocs.io/en/stable/ext/commands/api.html#discord.ext.commands.Context
 @bot.command(name = 'join', help='Tells the bot to join the voice channel')
 async def join(ctx):
     if not ctx.message.author.voice:
@@ -81,19 +103,42 @@ async def leave(ctx):
     if voice_client.is_connected():
         await voice_client.disconnect()
     else:
-        await ctx.send('The bot is connected to a voice channel.')
+        await ctx.send('The bot is not connected to a voice channel.')
 
-
-@bot.command(name = 'play_song', help='!play [song-url] - plays a single song given a valid Youtube URL')
+@bot.command(name = 'play', help = 'To play a new song, paused song, or paused queue')
 async def play(ctx, url):
+    # Join the call if we're not already joined
+    voice_client = ctx.message.guild.voice_client
+    if not voice_client.is_connected():
+        join(ctx)
+
+    # Add the current song to the queue if a song url was provided
+    if url is not None:
+        song_queue.put(url)
+    # Start the queue if it's not already playing
+    if voice_client.is_paused():
+        voice_client.resume()
+    elif not voice_client.is_playing():
+        play_song(ctx, song_queue[song_queue.qsize[0]])
+
+@bot.command(name = 'add_song', help = 'To add a song to the front of the queue')
+async def add_song(ctx, url):
+    await song_queue.append(url)
+
+    await ctx.send(song_queue.get_queue_report())
+
+
+@bot.command(name = 'play_song', help='!play_song [song-url] - plays a single song given a valid Youtube URL')
+async def play_song(ctx, url):
     try:
         server = ctx.message.guild
         print("server: ", server)
-        voice_channel = server.voice_client
+        voice_client = server.voice_client
 
         async with ctx.typing():
             filename = await YTDLSource.from_url(url, loop = bot.loop)
-            voice_channel.play(discord.FFmpegPCMAudio(executable = "ffmpeg.exe", source = filename, options = ffmpeg_options))
+            voice_client.play(discord.FFmpegPCMAudio(executable = "ffmpeg.exe", source = filename, options = ffmpeg_options))
+            
         await ctx.send(f'**Now playing:** {filename}')
     except (RuntimeError, TypeError, NameError):
         print(f"The bot is not connected to a voice channel. RuntimeError: {RuntimeError | 'N/A'} - TypeError: {TypeError | 'N/A'} - NameError: {NameError | 'N/A'}")
