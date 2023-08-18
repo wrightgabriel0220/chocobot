@@ -59,11 +59,9 @@ class RadioQueue(list):
         newline = "\n"
 
         return f"""
-            >>> Now playing: {self[0]} <<<
+            -> Now playing: {self[0]['title']} <-
 
-            {
-                f",{newline}".join([f"{iter}: {self[iter]}" for iter in range(len(self)) if iter > 0])
-            }
+            {newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self)) if i > 0])}
         """
 
 song_queue = RadioQueue()
@@ -77,14 +75,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop = None, stream = False):
-        print(f'url: {url}')
-        loop = loop or asyncio.get_event_loop()
+        loop = loop if loop else asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download = not stream))
-        if 'entries' in data:
+        if "entries" in data:
             # take first item from a playlist
-            data = data['entries'][0]
-        filename = data['title'] if stream else ytdl.prepare_filename(data)
-        return filename
+            data = data["entries"][0]
+        return { **data, "title": data["title"] if stream else ytdl.prepare_filename(data) }
 
 # ctx in all of these methods refers to the command context. https://discordpy.readthedocs.io/en/stable/ext/commands/api.html#discord.ext.commands.Context
 @bot.command(name = 'join', help='Tells the bot to join the voice channel')
