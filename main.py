@@ -1,5 +1,6 @@
 import asyncio
 from queue import Queue
+from re import A
 from sys import stderr
 import discord
 from discord.ext import commands
@@ -12,6 +13,8 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("discord_token")
 COMMAND_PREFIX = os.getenv("command_prefix")
 VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
+IN_LOBBY_ROLE_ID = int(os.getenv("in_lobby_role_id"))
+OUT_LOBBY_ROLE_ID = int(os.getenv("out_lobby_role_id"))
 
 
 # Setting the intents. These should match the intents on the Discord Developer Portal
@@ -20,7 +23,6 @@ intents = discord.Intents.all()
 
 # Connecting to an individual client of Chocobot
 client = discord.Client(intents = intents)
-# Creates a reference to our new Chocobot client
 bot = commands.Bot(command_prefix = COMMAND_PREFIX, intents = intents)
 
 # ytdl configuration
@@ -42,7 +44,6 @@ ytdl_format_options: yt_dlp = {
     'cachedir': False,
 }
 
-# ffmpeg configuration
 ffmpeg_options = {
     'options': '-vn'
 }
@@ -104,9 +105,13 @@ def _log_error(err: Exception, tag: str = None):
         """
     )
 
-# ctx in all of these methods refers to the command context. https://discordpy.readthedocs.io/en/stable/ext/commands/api.html#discord.ext.commands.Context
+@client.event
+async def on_guild_join(guild: discord.Guild) -> None:
+    # TODO: Implement role creation when bot joins server if needed roles are not already present
+    return
+
 @bot.command(name = 'join', help='Tells the bot to join the voice channel')
-async def join(ctx):
+async def join(ctx: commands.Context) -> None:
     if not ctx.message.author.voice:
         await ctx.send(f'{ctx.message.author.name} is not connected to a voice channel')
         return
@@ -115,7 +120,7 @@ async def join(ctx):
     await channel.connect()
 
 @bot.command(name = 'leave', help='To make the bot leave the voice channel')
-async def leave(ctx):
+async def leave(ctx: commands.Context) -> None:
     voice_client = ctx.message.guild.voice_client
     if voice_client.is_connected():
         await voice_client.disconnect()
@@ -123,7 +128,7 @@ async def leave(ctx):
         await ctx.send('The bot is not connected to a voice channel.')
 
 @bot.command(name = 'play', help = 'To play a new song, paused song, or paused queue')
-async def play(ctx, url = None):
+async def play(ctx: commands.Context, url = None):
         voice_client = ctx.message.guild.voice_client
 
         if url is not None:
@@ -140,22 +145,24 @@ async def play(ctx, url = None):
             await ctx.send(f"**-> Now Playing: {song_queue[len(song_queue) - 1].title} <-**")
 
 @play.error
-async def play_error(ctx, err):
+async def on_play_error(ctx: commands.Context, err: Exception) -> None:
     if not ctx.message.guild.voice_client:
         await ctx.send(f"The bot is not connected to a voice channel. Use {COMMAND_PREFIX}join to invite the bot to a channel and try again!")
+    else:
+        _log_error(err, "_on_play_error")
 
 @bot.command(name = 'add_song', help = 'To add a song to the front of the queue')
-async def add_song(ctx, url):
+async def add_song(ctx: commands.Context, url: str) -> None:
     await song_queue.append(url)
 
     await ctx.send(song_queue.get_queue_report())
 
 @add_song.error
-async def add_song_error(ctx, error: Exception):
-    _log_error(error, "add_song_error")
+async def on_add_song_error(_, error: Exception):
+    _log_error(error, "on_add_song_error")
 
 @bot.command(name = 'pause', help='Pauses the song currently playing if there is one')
-async def pause(ctx):
+async def pause(ctx: commands.Context) -> None:
     voice_client = ctx.message.guild.voice_client
     if voice_client.is_playing():
         await voice_client.pause()
@@ -163,11 +170,11 @@ async def pause(ctx):
         await ctx.send("The bot is not playing anything at the moment.")
 
 @bot.command(name = "queue", help="Display the current queue of songs up the visible queue limit")
-async def queue(ctx):
+async def queue(ctx: commands.Context) -> None:
     await ctx.send(song_queue.get_queue_report())
 
 @bot.command(name = "skip", help = "Skip the current song and begin playing the next song in the queue")
-async def skip(ctx):
+async def skip(ctx: commands.Context) -> None:
     if len(song_queue) > 1:
         await ctx.send("Skipping " + song_queue.current_song["title"])
 
@@ -184,29 +191,50 @@ async def skip(ctx):
              to join a call or play something without having to just sit in call. When somebody joins the lobby while you're
              in it, the bot will ping you to let you know.
              """)
-async def join_lobby(ctx):
+async def join_lobby(ctx: commands.Context) -> None:
     if ctx.author in lobby:
         await ctx.send("You're already in the lobby.")
-    else:
-        lobby.append(ctx.author.mention)
-        await ctx.send(f"""
-            {ctx.author.mention} has joined the lobby!
+        return
 
-            {", ".join([f'{user_mention}' for user_mention in lobby if user_mention != ctx.author.mention])}
-        """)
+    lobby.append(ctx.author.mention)
+    out_of_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
+    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+    
+    await ctx.author.remove_roles(out_of_lobby_role)
+    await ctx.author.add_roles(in_lobby_role)
+
+    await ctx.send(f"""
+        {ctx.author.mention} has joined the lobby!
+
+        {", ".join([f'{user_mention}' for user_mention in lobby if user_mention != ctx.author.mention])}
+    """)
+
+@join_lobby.error
+async def on_join_lobby_error(_, err: Exception) -> None:
+    _log_error(err, "_on_join_lobby_error")
 
 @bot.command(name = "leave_lobby", help = """
             Leave the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
             to join a call or play something without having to just sit in call.
             """)
-async def leave_lobby(ctx):
+async def leave_lobby(ctx: commands.Context) -> None:
     if ctx.author.mention not in lobby:
         await ctx.send(f"{ctx.author.mention} is not in the lobby.")
-    else:
-        lobby.remove(ctx.author.mention)
+        return
+    
+    lobby.remove(ctx.author.mention)
 
-@bot.command(name = "ping_lobby", help = "")
-async def ping_lobby(ctx):
+    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+    out_of_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
+
+    await ctx.author.remove_roles(in_lobby_role)
+    await ctx.author.add_roles(out_of_lobby_role)
+
+@bot.command(name = "ping_lobby", help = """
+            Send a ping to all members of your current LFG lobby. LFG lobbies are just a way to indicate to other folks that you're looking
+            to join a call or play something without having to just sit in call.
+            """)
+async def ping_lobby(ctx: commands.Context) -> None:
     if ctx.author.mention not in lobby:
         await ctx.send(f"{ctx.author.mention} is not in the lobby. You must be in the lobby to ping it!")
     else:
