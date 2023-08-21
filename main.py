@@ -95,6 +95,7 @@ class RadioQueue(list):
         """
 
 song_queue = RadioQueue()
+lobby = []
 
 def _log_error(err: Exception, tag: str = None):
     stderr.write(
@@ -177,6 +178,41 @@ async def skip(ctx):
             song_queue.pop()
     else:
         await ctx.send("There's nothing in the queue to skip.")
+    
+@bot.command(name = "join_lobby", help = """
+             Join the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
+             to join a call or play something without having to just sit in call. When somebody joins the lobby while you're
+             in it, the bot will ping you to let you know.
+             """)
+async def join_lobby(ctx):
+    if ctx.author in lobby:
+        await ctx.send("You're already in the lobby.")
+    else:
+        lobby.append(ctx.author.mention)
+        await ctx.send(f"""
+            {ctx.author.mention} has joined the lobby!
+
+            {", ".join([f'{user_mention}' for user_mention in lobby if user_mention != ctx.author.mention])}
+        """)
+
+@bot.command(name = "leave_lobby", help = """
+            Leave the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
+            to join a call or play something without having to just sit in call.
+            """)
+async def leave_lobby(ctx):
+    if ctx.author.mention not in lobby:
+        await ctx.send(f"{ctx.author.mention} is not in the lobby.")
+    else:
+        lobby.remove(ctx.author.mention)
+
+@bot.command(name = "ping_lobby", help = "")
+async def ping_lobby(ctx):
+    if ctx.author.mention not in lobby:
+        await ctx.send(f"{ctx.author.mention} is not in the lobby. You must be in the lobby to ping it!")
+    else:
+        await ctx.send(f"""
+        {", ".join([f'@{user_mention}' for user_mention in lobby if user_mention != ctx.author.mention])}
+        """)
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
