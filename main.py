@@ -1,5 +1,6 @@
 import asyncio
 from queue import Queue
+from sys import stderr
 import discord
 from discord.ext import commands
 import os
@@ -8,7 +9,6 @@ import yt_dlp
 
 load_dotenv()
 
-# Get the API token from the .env file
 DISCORD_TOKEN = os.getenv("discord_token")
 COMMAND_PREFIX = os.getenv("command_prefix")
 VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
@@ -25,7 +25,7 @@ bot = commands.Bot(command_prefix = COMMAND_PREFIX, intents = intents)
 
 # ytdl configuration
 yt_dlp.utils.bug_reports_message = lambda: 'There was an error!'
-ytdl_format_options = {
+ytdl_format_options: yt_dlp = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
@@ -34,9 +34,12 @@ ytdl_format_options = {
     'ignoreerrors': False,
     'logtostderr': True,
     'quiet': True,
+    'simulate': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
+    'force-ipv4': True,
+    'cachedir': False,
 }
 
 # ffmpeg configuration
@@ -60,7 +63,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop if loop else asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download = not stream))
         if "entries" in data:
-            # take first item from a playlist
             data = data["entries"][0]
         return data
 
@@ -71,7 +73,16 @@ class RadioQueue(list):
         super().__init__(self)
 
     async def append(self, url: str):
-        super().append(await YTDLSource.from_url(url))
+        new_audio: YTDLSource
+
+        try:
+            new_audio = await YTDLSource.from_url(url)
+        except Exception as err:
+            _log_error(err, "RadioQueue.append")
+        finally:
+            super().append(new_audio)
+
+        super().append(new_audio)
         self.current_song = self[len(self) - 1]
 
     def get_queue_report(self):
@@ -84,6 +95,13 @@ class RadioQueue(list):
         """
 
 song_queue = RadioQueue()
+
+def _log_error(err: Exception, tag: str = None):
+    stderr.write(
+        f"""[CHOCOBOT] There was an error at {tag}...
+        {err}
+        """
+    )
 
 # ctx in all of these methods refers to the command context. https://discordpy.readthedocs.io/en/stable/ext/commands/api.html#discord.ext.commands.Context
 @bot.command(name = 'join', help='Tells the bot to join the voice channel')
@@ -107,11 +125,9 @@ async def leave(ctx):
 async def play(ctx, url = None):
         voice_client = ctx.message.guild.voice_client
 
-        # Add the current song to the queue if a song url was provided
         if url is not None:
             song_queue.append(url)
         
-        # Start the queue if it's not already playing
         if voice_client.is_paused():
             voice_client.resume()
         elif not voice_client.is_playing():
@@ -123,7 +139,7 @@ async def play(ctx, url = None):
             await ctx.send(f"**-> Now Playing: {song_queue[len(song_queue) - 1].title} <-**")
 
 @play.error
-async def play_error(ctx, error):
+async def play_error(ctx, err):
     if not ctx.message.guild.voice_client:
         await ctx.send(f"The bot is not connected to a voice channel. Use {COMMAND_PREFIX}join to invite the bot to a channel and try again!")
 
@@ -132,6 +148,10 @@ async def add_song(ctx, url):
     await song_queue.append(url)
 
     await ctx.send(song_queue.get_queue_report())
+
+@add_song.error
+async def add_song_error(ctx, error: Exception):
+    _log_error(error, "add_song_error")
 
 @bot.command(name = 'pause', help='Pauses the song currently playing if there is one')
 async def pause(ctx):
@@ -145,6 +165,18 @@ async def pause(ctx):
 async def queue(ctx):
     await ctx.send(song_queue.get_queue_report())
 
+@bot.command(name = "skip", help = "Skip the current song and begin playing the next song in the queue")
+async def skip(ctx):
+    if len(song_queue) > 1:
+        await ctx.send("Skipping " + song_queue.current_song["title"])
+
+        if ctx.message.guild.voice_client.is_playing():
+            song_queue.remove(0)
+            await play(ctx)
+        else:
+            song_queue.pop()
+    else:
+        await ctx.send("There's nothing in the queue to skip.")
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
