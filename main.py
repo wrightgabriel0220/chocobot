@@ -192,7 +192,7 @@ async def skip(ctx: commands.Context) -> None:
              in it, the bot will ping you to let you know.
              """)
 async def join_lobby(ctx: commands.Context) -> None:
-    if ctx.author in lobby:
+    if ctx.author.mention in lobby:
         await ctx.send("You're already in the lobby.")
         return
 
