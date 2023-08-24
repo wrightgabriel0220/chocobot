@@ -108,11 +108,20 @@ async def on_guild_join(guild: discord.Guild) -> None:
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState) -> None:
-    in_lobby_role = member.guild.get_role(IN_LOBBY_ROLE_ID)
-    is_in_lobby = bool(member.get_role(IN_LOBBY_ROLE_ID))
+    def _is_bot_command_channel(channel: discord.TextChannel) -> bool:
+        if channel.category: return channel.category.name == "Bot Commands"
+
+    bot_command_channel: discord.TextChannel = next(
+        (channel for channel in member.guild.text_channels if _is_bot_command_channel(channel)),
+        None
+    )
+    in_lobby_role: discord.Role = member.guild.get_role(IN_LOBBY_ROLE_ID)
+    is_in_lobby = member.get_role(IN_LOBBY_ROLE_ID) is not None
+    
 
     if after.channel and not is_in_lobby:
         await member.add_roles(in_lobby_role)
+        await bot_command_channel.send(f"{member.mention} has joined the lobby! {in_lobby_role.mention}")
     elif not after.channel and is_in_lobby:
         await member.remove_roles(in_lobby_role)
 
@@ -198,8 +207,8 @@ async def skip(ctx: commands.Context) -> None:
              in it, the bot will ping you to let you know.
              """)
 async def join_lobby(ctx: commands.Context) -> None:
-    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
-    is_in_lobby = ctx.member.get_role(IN_LOBBY_ROLE_ID)
+    in_lobby_role: discord.Role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+    is_in_lobby = ctx.author.get_role(IN_LOBBY_ROLE_ID) is not None
 
     if is_in_lobby:
         await ctx.send("You're already in the lobby.")
@@ -218,8 +227,8 @@ async def on_join_lobby_error(_, err: Exception) -> None:
             to join a call or play something without having to just sit in call.
             """)
 async def leave_lobby(ctx: commands.Context) -> None:
-    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
-    is_in_lobby = ctx.member.get_role(IN_LOBBY_ROLE_ID)
+    in_lobby_role: discord.Role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+    is_in_lobby = ctx.author.get_role(IN_LOBBY_ROLE_ID) is not None
 
     if not is_in_lobby:
         await ctx.send(f"{ctx.author.mention} is not in the lobby.")
