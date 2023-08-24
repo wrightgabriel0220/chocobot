@@ -13,10 +13,8 @@ COMMAND_PREFIX = os.getenv("command_prefix")
 VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
 IN_LOBBY_ROLE_ID = int(os.getenv("in_lobby_role_id"))
 
-
 # Setting the intents. These should match the intents on the Discord Developer Portal
 intents = discord.Intents.all()
-
 
 # Connecting to an individual client of Chocobot
 client = discord.Client(intents = intents)
@@ -44,7 +42,6 @@ ytdl_format_options: yt_dlp = {
 ffmpeg_options = {
     'options': '-vn'
 }
-
 
 # Initializing our ytdl client
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -87,7 +84,6 @@ class RadioQueue(list):
 
         return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
 
-
 song_queue = RadioQueue()
 
 def _log_error(err: Exception, tag: str = None):
@@ -114,12 +110,12 @@ async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceS
     in_lobby_role: discord.Role = member.guild.get_role(IN_LOBBY_ROLE_ID)
     is_in_lobby = member.get_role(IN_LOBBY_ROLE_ID) is not None
     
-
-    if after.channel and not is_in_lobby:
-        await member.add_roles(in_lobby_role)
-        await bot_command_channel.send(f"{member.mention} has joined the lobby! {in_lobby_role.mention}")
-    elif not after.channel and is_in_lobby:
-        await member.remove_roles(in_lobby_role)
+    if not discord.utils.get(member.roles, name = "Chocobot"):
+        if after.channel and not is_in_lobby:
+            await member.add_roles(in_lobby_role)
+            await bot_command_channel.send(f"{member.mention} has joined the lobby! {in_lobby_role.mention}")
+        elif not after.channel and is_in_lobby:
+            await member.remove_roles(in_lobby_role)
 
 @bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
 async def join(ctx: commands.Context) -> None:
