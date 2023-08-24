@@ -216,7 +216,7 @@ async def join_lobby(ctx: commands.Context) -> None:
     
     await ctx.author.add_roles(in_lobby_role)
 
-    await ctx.send(f"{ctx.author.mention} has joined the lobby! <@{IN_LOBBY_ROLE_ID}>")
+    await ctx.send(f"{ctx.author.mention} has joined the lobby! {in_lobby_role.mention}")
 
 @join_lobby.error
 async def on_join_lobby_error(_, err: Exception) -> None:
