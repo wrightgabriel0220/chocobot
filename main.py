@@ -80,17 +80,13 @@ class RadioQueue(list):
         finally:
             super().append(new_audio)
 
-        super().append(new_audio)
         self.current_song = self[len(self) - 1]
 
     def get_queue_report(self):
         newline = "\n"
 
-        return f"""
-            -> Now playing: {self[0]['title']} <-
+        return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
 
-            {newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self)) if i > 0])}
-        """
 
 song_queue = RadioQueue()
 
@@ -152,11 +148,23 @@ async def play(ctx: commands.Context, url = None):
         if voice_client.is_paused():
             voice_client.resume()
         elif not voice_client.is_playing():
-            voice_client.play(discord.FFmpegPCMAudio(
+            track = discord.FFmpegPCMAudio(
                 executable = "ffmpeg.exe",
                 source = ytdl.prepare_filename(song_queue.current_song),
-                options = ffmpeg_options
-            ))
+                options = ffmpeg_options,
+            )
+
+            async def advance_queue():
+                song_queue.pop()
+
+                if len(song_queue) > 0:
+                    voice_client.play(track, after=advance_queue)
+                    await ctx.send(song_queue.get_queue_report())
+
+                voice_client.play(track, after=advance_queue)
+
+            voice_client.play(track, after=advance_queue)
+            
             await ctx.send(f"**-> Now Playing: {song_queue[len(song_queue) - 1].title} <-**")
 
 @play.error
