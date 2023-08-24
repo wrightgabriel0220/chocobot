@@ -80,6 +80,9 @@ class RadioQueue(list):
         self.current_song = self[len(self) - 1]
 
     def get_queue_report(self):
+        if len(self) == 0:
+            return "There's nothing in the queue! Use !add_song <url> to add a song"
+
         newline = "\n"
 
         return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
@@ -150,18 +153,13 @@ async def play(ctx: commands.Context, url = None):
                 options = ffmpeg_options,
             )
 
-            async def advance_queue():
+            def advance_queue(_):
                 song_queue.pop()
 
                 if len(song_queue) > 0:
                     voice_client.play(track, after=advance_queue)
-                    await ctx.send(song_queue.get_queue_report())
-
-                voice_client.play(track, after=advance_queue)
 
             voice_client.play(track, after=advance_queue)
-            
-            await ctx.send(f"**-> Now Playing: {song_queue[len(song_queue) - 1].title} <-**")
 
 @play.error
 async def on_play_error(ctx: commands.Context, err: Exception) -> None:
