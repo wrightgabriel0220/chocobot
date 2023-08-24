@@ -1,6 +1,4 @@
 import asyncio
-from queue import Queue
-from re import A
 from sys import stderr
 import discord
 from discord.ext import commands
@@ -96,7 +94,6 @@ class RadioQueue(list):
         """
 
 song_queue = RadioQueue()
-lobby = []
 
 def _log_error(err: Exception, tag: str = None):
     stderr.write(
@@ -105,12 +102,24 @@ def _log_error(err: Exception, tag: str = None):
         """
     )
 
-@client.event
+@bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
     # TODO: Implement role creation when bot joins server if needed roles are not already present
-    return
+    pass
 
-@bot.command(name = 'join', help='Tells the bot to join the voice channel')
+@bot.event
+async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState) -> None:
+    out_lobby_role = member.guild.get_role(OUT_LOBBY_ROLE_ID)
+    in_lobby_role = member.guild.get_role(IN_LOBBY_ROLE_ID)
+
+    if after.channel and out_lobby_role:
+        await member.add_roles(in_lobby_role)
+        await member.remove_roles(out_lobby_role)
+    elif not after.channel and in_lobby_role:
+        await member.add_roles(out_lobby_role)
+        await member.remove_roles(in_lobby_role)
+
+@bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
 async def join(ctx: commands.Context) -> None:
     if not ctx.message.author.voice:
         await ctx.send(f'{ctx.message.author.name} is not connected to a voice channel')
@@ -119,7 +128,7 @@ async def join(ctx: commands.Context) -> None:
         channel = ctx.message.author.voice.channel
     await channel.connect()
 
-@bot.command(name = 'leave', help='To make the bot leave the voice channel')
+@bot.command(name = 'leave', help = 'To make the bot leave the voice channel')
 async def leave(ctx: commands.Context) -> None:
     voice_client = ctx.message.guild.voice_client
     if voice_client.is_connected():
@@ -192,22 +201,17 @@ async def skip(ctx: commands.Context) -> None:
              in it, the bot will ping you to let you know.
              """)
 async def join_lobby(ctx: commands.Context) -> None:
-    if ctx.author.mention in lobby:
+    out_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
+    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+
+    if in_lobby_role:
         await ctx.send("You're already in the lobby.")
         return
-
-    lobby.append(ctx.author.mention)
-    out_of_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
-    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
     
-    await ctx.author.remove_roles(out_of_lobby_role)
+    await ctx.author.remove_roles(out_lobby_role)
     await ctx.author.add_roles(in_lobby_role)
 
-    await ctx.send(f"""
-        {ctx.author.mention} has joined the lobby!
-
-        {", ".join([f'{user_mention}' for user_mention in lobby if user_mention != ctx.author.mention])}
-    """)
+    await ctx.send(f"{ctx.author.mention} has joined the lobby! <@{IN_LOBBY_ROLE_ID}>")
 
 @join_lobby.error
 async def on_join_lobby_error(_, err: Exception) -> None:
@@ -218,29 +222,15 @@ async def on_join_lobby_error(_, err: Exception) -> None:
             to join a call or play something without having to just sit in call.
             """)
 async def leave_lobby(ctx: commands.Context) -> None:
-    if ctx.author.mention not in lobby:
+    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+    out_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
+
+    if out_lobby_role:
         await ctx.send(f"{ctx.author.mention} is not in the lobby.")
         return
-    
-    lobby.remove(ctx.author.mention)
-
-    in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
-    out_of_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
 
     await ctx.author.remove_roles(in_lobby_role)
-    await ctx.author.add_roles(out_of_lobby_role)
-
-@bot.command(name = "ping_lobby", help = """
-            Send a ping to all members of your current LFG lobby. LFG lobbies are just a way to indicate to other folks that you're looking
-            to join a call or play something without having to just sit in call.
-            """)
-async def ping_lobby(ctx: commands.Context) -> None:
-    if ctx.author.mention not in lobby:
-        await ctx.send(f"{ctx.author.mention} is not in the lobby. You must be in the lobby to ping it!")
-    else:
-        await ctx.send(f"""
-        {", ".join([f'@{user_mention}' for user_mention in lobby if user_mention != ctx.author.mention])}
-        """)
+    await ctx.author.add_roles(out_lobby_role)
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
