@@ -12,7 +12,6 @@ DISCORD_TOKEN = os.getenv("discord_token")
 COMMAND_PREFIX = os.getenv("command_prefix")
 VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
 IN_LOBBY_ROLE_ID = int(os.getenv("in_lobby_role_id"))
-OUT_LOBBY_ROLE_ID = int(os.getenv("out_lobby_role_id"))
 
 
 # Setting the intents. These should match the intents on the Discord Developer Portal
@@ -109,14 +108,12 @@ async def on_guild_join(guild: discord.Guild) -> None:
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState) -> None:
-    out_lobby_role = member.guild.get_role(OUT_LOBBY_ROLE_ID)
     in_lobby_role = member.guild.get_role(IN_LOBBY_ROLE_ID)
+    is_in_lobby = bool(member.get_role(IN_LOBBY_ROLE_ID))
 
-    if after.channel and out_lobby_role:
+    if after.channel and not is_in_lobby:
         await member.add_roles(in_lobby_role)
-        await member.remove_roles(out_lobby_role)
-    elif not after.channel and in_lobby_role:
-        await member.add_roles(out_lobby_role)
+    elif not after.channel and is_in_lobby:
         await member.remove_roles(in_lobby_role)
 
 @bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
@@ -201,14 +198,13 @@ async def skip(ctx: commands.Context) -> None:
              in it, the bot will ping you to let you know.
              """)
 async def join_lobby(ctx: commands.Context) -> None:
-    out_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
     in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+    is_in_lobby = ctx.member.get_role(IN_LOBBY_ROLE_ID)
 
-    if in_lobby_role:
+    if is_in_lobby:
         await ctx.send("You're already in the lobby.")
         return
     
-    await ctx.author.remove_roles(out_lobby_role)
     await ctx.author.add_roles(in_lobby_role)
 
     await ctx.send(f"{ctx.author.mention} has joined the lobby! <@{IN_LOBBY_ROLE_ID}>")
@@ -223,14 +219,13 @@ async def on_join_lobby_error(_, err: Exception) -> None:
             """)
 async def leave_lobby(ctx: commands.Context) -> None:
     in_lobby_role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
-    out_lobby_role = ctx.guild.get_role(OUT_LOBBY_ROLE_ID)
+    is_in_lobby = ctx.member.get_role(IN_LOBBY_ROLE_ID)
 
-    if out_lobby_role:
+    if not is_in_lobby:
         await ctx.send(f"{ctx.author.mention} is not in the lobby.")
         return
 
     await ctx.author.remove_roles(in_lobby_role)
-    await ctx.author.add_roles(out_lobby_role)
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
