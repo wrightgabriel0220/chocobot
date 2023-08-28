@@ -22,16 +22,16 @@ bot = commands.Bot(command_prefix = COMMAND_PREFIX, intents = intents)
 
 # ytdl configuration
 yt_dlp.utils.bug_reports_message = lambda: 'There was an error!'
-ytdl_format_options: yt_dlp = {
+ytdl_format_options = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'noplaylist': True,
+    'noplaylist': False,
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'logtostderr': True,
-    'quiet': True,
-    'simulate': True,
+    'quiet': False,
+    'simulate': False,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
@@ -55,10 +55,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop = None, stream = False):
-        loop = loop if loop else asyncio.get_event_loop()
+        loop = loop if loop is not None else asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download = not stream))
         if "entries" in data:
             data = data["entries"][0]
+
         return data
 
 class RadioQueue(list):
@@ -139,27 +140,27 @@ async def leave(ctx: commands.Context) -> None:
 
 @bot.command(name = 'play', help = 'To play a new song, paused song, or paused queue')
 async def play(ctx: commands.Context, url = None):
-        voice_client = ctx.message.guild.voice_client
+    voice_client = ctx.message.guild.voice_client
 
-        if url is not None:
-            song_queue.append(url)
-        
-        if voice_client.is_paused():
-            voice_client.resume()
-        elif not voice_client.is_playing():
-            track = discord.FFmpegPCMAudio(
-                executable = "ffmpeg.exe",
-                source = ytdl.prepare_filename(song_queue.current_song),
-                options = ffmpeg_options,
-            )
+    if url is not None:
+        song_queue.append(url)
+    
+    if voice_client.is_paused():
+        voice_client.resume()
+    elif not voice_client.is_playing():
+        track = discord.FFmpegPCMAudio(
+            executable = "ffmpeg.exe",
+            source = ytdl.prepare_filename(song_queue.current_song),
+            options = ffmpeg_options,
+        )
 
-            def advance_queue(_):
-                song_queue.pop()
+        def advance_queue(_):
+            song_queue.pop()
 
-                if len(song_queue) > 0:
-                    voice_client.play(track, after=advance_queue)
+            if len(song_queue) > 0:
+                voice_client.play(track, after=advance_queue)
 
-            voice_client.play(track, after=advance_queue)
+        voice_client.play(track, after=advance_queue)
 
 @play.error
 async def on_play_error(ctx: commands.Context, err: Exception) -> None:
