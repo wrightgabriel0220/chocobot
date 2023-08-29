@@ -61,7 +61,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data["entries"][0]
 
         return data
-
 class RadioQueue(list):
     current_song: YTDLSource
 
@@ -89,6 +88,14 @@ class RadioQueue(list):
         return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
 
 song_queue = RadioQueue()
+
+# class BotGuildInstance(discord.Client):
+#     song_queue = RadioQueue()
+
+#     def __init__():
+#         # Save the 
+
+# song_queue = RadioQueue()
 
 def _log_error(err: Exception, tag: str = None):
     stderr.write(
