@@ -1,5 +1,7 @@
 import asyncio
+from functools import wraps
 from sys import stderr
+from typing import Callable, Coroutine
 import discord
 from discord.ext import commands
 import os
@@ -16,36 +18,6 @@ IN_LOBBY_ROLE_ID = int(os.getenv("in_lobby_role_id"))
 # Setting the intents. These should match the intents on the Discord Developer Portal
 intents = discord.Intents.all()
 
-# Connecting to an individual client of Chocobot
-client = discord.Client(intents = intents)
-bot = commands.Bot(command_prefix = COMMAND_PREFIX, intents = intents)
-
-# ytdl configuration
-yt_dlp.utils.bug_reports_message = lambda: 'There was an error!'
-ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': False,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': True,
-    'quiet': False,
-    'simulate': False,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
-    'force-ipv4': True,
-    'cachedir': False,
-}
-
-ffmpeg_options = {
-    'options': '-vn'
-}
-
-# Initializing our ytdl client
-ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
-
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume = 0.5):
         super().__init__(source, volume)
@@ -61,6 +33,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data["entries"][0]
 
         return data
+
 class RadioQueue(list):
     current_song: YTDLSource
 
@@ -86,16 +59,81 @@ class RadioQueue(list):
         newline = "\n"
 
         return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
+    
+class ChocobotGuildRecord(discord.Guild):
+    """A set of environmental variables storing state specific to each guild the bot is connected to"""
+    def __init__(self, guild: discord.Guild, bot_command_channel: discord.ChannelType, in_lobby_role: discord.Role):
+        self.name = guild.name
+        self.guild = guild
+        self.bot_command_channel = bot_command_channel
+        self.song_queue = RadioQueue()
+        self.in_lobby_role = in_lobby_role
+    
+    @classmethod
+    async def generate_record(cls, guild: discord.Guild, bot_command_channel: discord.ChannelType):
+        in_lobby_role = await guild.create_role(name="In Server Lobby", hoist=True, mentionable=True, color=discord.Color.green())
 
-song_queue = RadioQueue()
+        return ChocobotGuildRecord(guild=guild, bot_command_channel=bot_command_channel, in_lobby_role=in_lobby_role)
 
-# class BotGuildInstance(discord.Client):
-#     song_queue = RadioQueue()
+    @classmethod
+    def get_matching_guild_record(cls, target_guild: discord.Guild):
+        return next((guild_record for guild_record in guild_registry if guild_record.guild.id == target_guild.id), None)
 
-#     def __init__():
-#         # Save the 
+def bot_command_with_registry(name: str, help: str) -> Callable:
+    def decorator(func: Coroutine):
+        @wraps(func)
+        @bot.command(name=name, help=help)
+        async def inner(ctx, *args, **kwargs):
+            guild_record = ChocobotGuildRecord.get_matching_guild_record(ctx.guild)
 
-# song_queue = RadioQueue()
+            if guild_record is not None:
+                await func(ctx, guild_record, *args, **kwargs)
+            else:
+                await ctx.send("This command requires that you first register your guild. It'll only take a few seconds! Just use the !register command to get set up!")
+
+        return inner
+    return decorator
+
+def bot_event_with_registry(func: Callable):
+    @bot.event
+    async def inner(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState, *args, **kwargs):
+        guild_record = ChocobotGuildRecord.get_matching_guild_record(member.guild)
+
+        if guild_record is not None:
+            func(member, before, after, guild_record, *args, **kwargs)
+
+        func(member, before, after)
+
+    return inner
+
+bot = commands.Bot(command_prefix = COMMAND_PREFIX, intents = intents)
+guild_registry: list[ChocobotGuildRecord] = []
+
+# ytdl configuration
+yt_dlp.utils.bug_reports_message = lambda: 'There was an error!'
+ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': False,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': True,
+    'quiet': False,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
+    'force-ipv4': True,
+    'cachedir': False,
+    'nokeepfragments': True
+}
+
+ffmpeg_options = {
+    'options': '-vn'
+}
+
+# Initializing our ytdl client
+ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 def _log_error(err: Exception, tag: str = None):
     stderr.write(
@@ -106,27 +144,28 @@ def _log_error(err: Exception, tag: str = None):
 
 @bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
-    # TODO: Implement role creation when bot joins server if needed roles are not already present
-    pass
+    print(f"active guilds: {guild_registry}")
 
-@bot.event
-async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState) -> None:
-    def _is_bot_command_channel(channel: discord.TextChannel) -> bool:
-        if channel.category: return channel.category.name == "Bot Commands"
-
-    bot_command_channel: discord.TextChannel = next(
-        (channel for channel in member.guild.text_channels if _is_bot_command_channel(channel)),
-        None
-    )
-    in_lobby_role: discord.Role = member.guild.get_role(IN_LOBBY_ROLE_ID)
+@bot_event_with_registry
+async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState, guild_record: ChocobotGuildRecord) -> None:
     is_in_lobby = member.get_role(IN_LOBBY_ROLE_ID) is not None
     
     if not discord.utils.get(member.roles, name = "Chocobot"):
         if after.channel and not is_in_lobby:
-            await member.add_roles(in_lobby_role)
-            await bot_command_channel.send(f"{member.mention} has joined the lobby! {in_lobby_role.mention}")
+            await member.add_roles(guild_record.in_lobby_role)
+            await guild_record.bot_command_channel.send(f"{member.mention} has joined the lobby! {guild_record.in_lobby_role.mention}")
         elif not after.channel and is_in_lobby:
-            await member.remove_roles(in_lobby_role)
+            await member.remove_roles(guild_record.in_lobby_role)
+
+@bot.command(name = 'register', help = 'Sets initial, permanent configurations for the bot specific to this server')
+async def register(ctx: commands.Context) -> None:
+    channel_names: [str] = [channel.name for channel in ctx.guild.channels]
+
+    await ctx.send("Please type the *specific* name of your preferred bot commands channel, hyphens, etc... and all.")
+    bot_command_channel = await bot.wait_for("message", check=lambda msg: msg.content in channel_names)
+    
+    await ctx.send(f"Registration for {ctx.guild.name} is complete. Enjoy!")
+    guild_registry.append(await ChocobotGuildRecord.generate_record(bot_command_channel=bot_command_channel, guild=ctx.guild))
 
 @bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
 async def join(ctx: commands.Context) -> None:
@@ -145,26 +184,26 @@ async def leave(ctx: commands.Context) -> None:
     else:
         await ctx.send('The bot is not connected to a voice channel.')
 
-@bot.command(name = 'play', help = 'To play a new song, paused song, or paused queue')
-async def play(ctx: commands.Context, url = None):
+@bot_command_with_registry(name = 'play', help = 'To play a new song, paused song, or paused queue')
+async def play(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: str = None) -> None:
     voice_client = ctx.message.guild.voice_client
 
     if url is not None:
-        song_queue.append(url)
-    
+        guild_record.song_queue.append(url)
+
     if voice_client.is_paused():
         voice_client.resume()
     elif not voice_client.is_playing():
         track = discord.FFmpegPCMAudio(
             executable = "ffmpeg.exe",
-            source = ytdl.prepare_filename(song_queue.current_song),
+            source = ytdl.prepare_filename(guild_record.song_queue.current_song),
             options = ffmpeg_options,
         )
 
         def advance_queue(_):
-            song_queue.pop()
+            guild_record.song_queue.pop()
 
-            if len(song_queue) > 0:
+            if len(guild_record.song_queue) > 0:
                 voice_client.play(track, after=advance_queue)
 
         voice_client.play(track, after=advance_queue)
@@ -176,75 +215,72 @@ async def on_play_error(ctx: commands.Context, err: Exception) -> None:
     else:
         _log_error(err, "_on_play_error")
 
-@bot.command(name = 'add_song', help = 'To add a song to the front of the queue')
-async def add_song(ctx: commands.Context, url: str) -> None:
-    await song_queue.append(url)
+@bot_command_with_registry(name = 'add_song', help = 'To add a song to the front of the queue')
+async def add_song(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: str) -> None:
+    await guild_record.song_queue.append(url)
 
-    await ctx.send(song_queue.get_queue_report())
+    await ctx.send(guild_record.song_queue.get_queue_report())
 
 @add_song.error
 async def on_add_song_error(_, error: Exception):
     _log_error(error, "on_add_song_error")
 
-@bot.command(name = 'pause', help='Pauses the song currently playing if there is one')
-async def pause(ctx: commands.Context) -> None:
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        await voice_client.pause()
+@bot_command_with_registry(name = 'pause', help='Pauses the song currently playing if there is one')
+async def pause(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
+    if guild_record.guild.voice_client.is_playing():
+        await guild_record.guild.voice_client.pause()
     else:
         await ctx.send("The bot is not playing anything at the moment.")
 
-@bot.command(name = "queue", help="Display the current queue of songs up the visible queue limit")
-async def queue(ctx: commands.Context) -> None:
-    await ctx.send(song_queue.get_queue_report())
+@bot_command_with_registry(name = "queue", help="Display the current queue of songs up the visible queue limit")
+async def queue(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
+    await ctx.send(guild_record.song_queue.get_queue_report())
 
-@bot.command(name = "skip", help = "Skip the current song and begin playing the next song in the queue")
-async def skip(ctx: commands.Context) -> None:
-    if len(song_queue) > 1:
-        await ctx.send("Skipping " + song_queue.current_song["title"])
+@bot_command_with_registry(name = "skip", help = "Skip the current song and begin playing the next song in the queue")
+async def skip(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
+    if len(guild_record.song_queue) > 1:
+        await ctx.send("Skipping " + guild_record.song_queue.current_song["title"])
 
         if ctx.message.guild.voice_client.is_playing():
-            song_queue.remove(0)
+            guild_record.song_queue.remove(0)
             await play(ctx)
         else:
-            song_queue.pop()
+            guild_record.song_queue.pop()
     else:
         await ctx.send("There's nothing in the queue to skip.")
-    
-@bot.command(name = "join_lobby", help = """
+
+@bot_command_with_registry(name = "join_lobby", help = """
              Join the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
              to join a call or play something without having to just sit in call. When somebody joins the lobby while you're
              in it, the bot will ping you to let you know.
              """)
-async def join_lobby(ctx: commands.Context) -> None:
-    in_lobby_role: discord.Role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+async def join_lobby(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
     is_in_lobby = ctx.author.get_role(IN_LOBBY_ROLE_ID) is not None
 
     if is_in_lobby:
         await ctx.send("You're already in the lobby.")
         return
     
-    await ctx.author.add_roles(in_lobby_role)
+    await ctx.author.add_roles(guild_record.in_lobby_role)
 
-    await ctx.send(f"{ctx.author.mention} has joined the lobby! {in_lobby_role.mention}")
+    await ctx.send(f"{ctx.author.mention} has joined the lobby! {guild_record.in_lobby_role.mention}")
 
 @join_lobby.error
 async def on_join_lobby_error(_, err: Exception) -> None:
     _log_error(err, "_on_join_lobby_error")
 
-@bot.command(name = "leave_lobby", help = """
+@bot_command_with_registry(name = "leave_lobby", help = """
             Leave the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
             to join a call or play something without having to just sit in call.
             """)
-async def leave_lobby(ctx: commands.Context) -> None:
-    in_lobby_role: discord.Role = ctx.guild.get_role(IN_LOBBY_ROLE_ID)
+async def leave_lobby(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
     is_in_lobby = ctx.author.get_role(IN_LOBBY_ROLE_ID) is not None
 
     if not is_in_lobby:
         await ctx.send(f"{ctx.author.mention} is not in the lobby.")
         return
 
-    await ctx.author.remove_roles(in_lobby_role)
+    await ctx.author.remove_roles(guild_record.in_lobby_role)
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
