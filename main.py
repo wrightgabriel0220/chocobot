@@ -1,8 +1,7 @@
 import asyncio
 from functools import wraps
-import json
 from sys import stderr
-from typing import Callable, Coroutine
+from typing import Callable, Coroutine, Dict
 import discord
 from discord.ext import commands
 import os
@@ -64,6 +63,10 @@ class RadioQueue(list):
     
 class ChocobotGuildRecord(discord.Guild):
     """A set of environmental variables storing state specific to each guild the bot is connected to"""
+    class GuildArchiveDataEntry(Dict):
+        name: str
+        bot_command_channel: str
+
     def __init__(self, guild: discord.Guild, bot_command_channel: discord.abc.GuildChannel, in_lobby_role: discord.Role) -> None:
         self.name: str = guild.name
         self.guild: discord.Guild = guild
@@ -71,11 +74,18 @@ class ChocobotGuildRecord(discord.Guild):
         self.song_queue: RadioQueue = RadioQueue()
         self.in_lobby_role: discord.Role = in_lobby_role
     
-    def to_json(self) -> str:
-        return jsonpickle.encode({
+    def to_archive_format(self) -> GuildArchiveDataEntry:
+        return {
             "name": self.name,
             "bot_command_channel": self.bot_command_channel.name
-        }, keys=True)
+        }
+    
+    @classmethod
+    async def from_archive_format(cls, guild_archive_data: GuildArchiveDataEntry):
+        guild: discord.Guild = discord.utils.get(bot.guilds, name=guild_archive_data.get("name"))
+        guild_record = await ChocobotGuildRecord.generate_record(guild, guild_archive_data.get("bot_command_channel"))
+
+        return guild_record
     
     @classmethod
     async def generate_record(cls, guild: discord.Guild, bot_command_channel: discord.ChannelType):
@@ -119,14 +129,7 @@ def bot_event_with_registry(func: Callable):
 
 guild_registry: list[ChocobotGuildRecord] = []
 
-def run_wakeup_protocol():
-    with open("guild_archive.json") as guild_archive:
-        _guild_registry: list[ChocobotGuildRecord] = jsonpickle.decode(guild_archive.read(), classes=ChocobotGuildRecord)
-        for guild_record in _guild_registry:
-            guild_registry.append(guild_record) 
-
 bot = commands.Bot(command_prefix = COMMAND_PREFIX, intents = intents)
-
 
 # ytdl configuration
 yt_dlp.utils.bug_reports_message = lambda: 'There was an error!'
@@ -162,8 +165,19 @@ def _log_error(err: Exception, tag: str = None):
     )
 
 @bot.event
+async def on_ready():
+    with open("guild_archive.json") as guild_archive_file:
+        guild_archive = jsonpickle.decode(guild_archive_file.read())
+
+        _guild_registry: list[ChocobotGuildRecord] = [
+            await ChocobotGuildRecord.from_archive_format(archive_entry) for archive_entry in guild_archive
+        ]
+        
+        for guild_record in _guild_registry:
+            guild_registry.append(guild_record) 
+
+@bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
-    print(f"active guilds: {[guild_record.to_json() for guild_record in guild_registry]}")
     await guild.channels[0].send("Hi! I'm Chocobot! To use most of the commands, you'll need to run '!register' first. To learn more about '!register', use '!help register'")
 
 @bot_event_with_registry
@@ -190,7 +204,7 @@ async def register(ctx: commands.Context) -> None:
     await ctx.send(f"Registration for {ctx.guild.name} is complete. Enjoy!")
     guild_registry.append(await ChocobotGuildRecord.generate_record(bot_command_channel=bot_command_channel, guild=ctx.guild))
     with open("guild_archive.json", "w") as guild_archive:
-        pickled_json_registry: str = jsonpickle.encode([guild_record.to_json() for guild_record in guild_registry])
+        pickled_json_registry: str = jsonpickle.encode([guild_record.to_archive_format() for guild_record in guild_registry], include_properties=True)
         guild_archive.write(pickled_json_registry)
 
 @bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
@@ -309,6 +323,4 @@ async def leave_lobby(ctx: commands.Context, guild_record: ChocobotGuildRecord) 
     await ctx.author.remove_roles(guild_record.in_lobby_role)
 
 if __name__ == "__main__":
-    run_wakeup_protocol()
-    print(f"Guild Registry: {[guild_record.guild.name for guild_record in guild_registry]}")
     bot.run(DISCORD_TOKEN)
