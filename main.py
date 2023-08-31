@@ -163,7 +163,8 @@ def _log_error(err: Exception, tag: str = None):
 
 @bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
-    print(f"active guilds: {guild_registry}")
+    print(f"active guilds: {[guild_record.to_json() for guild_record in guild_registry]}")
+    await guild.channels[0].send("Hi! I'm Chocobot! To use most of the commands, you'll need to run '!register' first. To learn more about '!register', use '!help register'")
 
 @bot_event_with_registry
 async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState, guild_record: ChocobotGuildRecord) -> None:

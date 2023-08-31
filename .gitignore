@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 youtube*
+*.webm
+guild_archive.json
