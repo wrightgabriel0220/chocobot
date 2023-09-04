@@ -114,9 +114,6 @@ def bot_command_with_registry(name: str, help: str) -> Callable:
     return decorator
 
 def bot_event_with_registry(func: Callable) -> Callable:
-    print("test1")
-    print(True == "True")
-
     @bot.event
     async def inner(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState, *args, **kwargs):
         print('test2')
@@ -177,7 +174,7 @@ async def on_ready():
         
         for guild_record in _guild_registry:
             guild_registry.append(guild_record) 
-    
+
     print('ready')
 
 @bot.event
