@@ -14,8 +14,6 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("discord_token")
 COMMAND_PREFIX = os.getenv("command_prefix")
 VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
-IN_LOBBY_ROLE_ID = int(os.getenv("in_lobby_role_id"))
-
 # Setting the intents. These should match the intents on the Discord Developer Portal
 intents = discord.Intents.all()
 
@@ -115,15 +113,19 @@ def bot_command_with_registry(name: str, help: str) -> Callable:
         return inner
     return decorator
 
-def bot_event_with_registry(func: Callable):
+def bot_event_with_registry(func: Callable) -> Callable:
+    print("test1")
+    print(True == "True")
+
     @bot.event
     async def inner(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState, *args, **kwargs):
+        print('test2')
         guild_record = ChocobotGuildRecord.get_matching_guild_record(member.guild)
 
         if guild_record is not None:
-            func(member, before, after, guild_record, *args, **kwargs)
+            await func(member, before, after, guild_record, *args, **kwargs)
 
-        func(member, before, after)
+        await func(member, before, after)
 
     return inner
 
@@ -175,6 +177,8 @@ async def on_ready():
         
         for guild_record in _guild_registry:
             guild_registry.append(guild_record) 
+    
+    print('ready')
 
 @bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
@@ -182,8 +186,9 @@ async def on_guild_join(guild: discord.Guild) -> None:
 
 @bot_event_with_registry
 async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState, guild_record: ChocobotGuildRecord) -> None:
-    is_in_lobby = member.get_role(IN_LOBBY_ROLE_ID) is not None
-    
+    print("test")
+    is_in_lobby = member.get_role(guild_record.in_lobby_role.id) is not None
+
     if not discord.utils.get(member.roles, name = "Chocobot"):
         if after.channel and not is_in_lobby:
             await member.add_roles(guild_record.in_lobby_role)
@@ -194,18 +199,20 @@ async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceS
 @bot.command(name = 'register', help = 'Sets initial, permanent configurations for the bot specific to this server')
 async def register(ctx: commands.Context) -> None:
     REGISTER_TIMEOUT = 7000
+    if ctx.guild.name not in next((guild_record.name for guild_record in guild_registry), None):
+        channel_names: [str] = [channel.name for channel in ctx.guild.channels]
 
-    channel_names: [str] = [channel.name for channel in ctx.guild.channels]
-
-    await ctx.send("Please type the *specific* name of your preferred bot commands channel, hyphens, etc... and all.")
-    response: discord.Message = await bot.wait_for("message", check=lambda msg: msg.content in channel_names, timeout=REGISTER_TIMEOUT)
-    bot_command_channel = discord.utils.get(ctx.guild.channels, name=response.content)
-    
-    await ctx.send(f"Registration for {ctx.guild.name} is complete. Enjoy!")
-    guild_registry.append(await ChocobotGuildRecord.generate_record(bot_command_channel=bot_command_channel, guild=ctx.guild))
-    with open("guild_archive.json", "w") as guild_archive:
-        pickled_json_registry: str = jsonpickle.encode([guild_record.to_archive_format() for guild_record in guild_registry], include_properties=True)
-        guild_archive.write(pickled_json_registry)
+        await ctx.send("Please type the *specific* name of your preferred bot commands channel, hyphens, etc... and all.")
+        response: discord.Message = await bot.wait_for("message", check=lambda msg: msg.content in channel_names, timeout=REGISTER_TIMEOUT)
+        bot_command_channel = discord.utils.get(ctx.guild.channels, name=response.content)
+        
+        await ctx.send(f"Registration for {ctx.guild.name} is complete. Enjoy!")
+        guild_registry.append(await ChocobotGuildRecord.generate_record(bot_command_channel=bot_command_channel, guild=ctx.guild))
+        with open("guild_archive.json", "w") as guild_archive:
+            pickled_json_registry: str = jsonpickle.encode([guild_record.to_archive_format() for guild_record in guild_registry], include_properties=True)
+            guild_archive.write(pickled_json_registry)
+    else:
+        await ctx.send("This guild is already registered. If you need to re-register, contact whoever is running this bot.")
 
 @bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
 async def join(ctx: commands.Context) -> None:
@@ -295,7 +302,7 @@ async def skip(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None
              in it, the bot will ping you to let you know.
              """)
 async def join_lobby(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    is_in_lobby = ctx.author.get_role(IN_LOBBY_ROLE_ID) is not None
+    is_in_lobby = ctx.author.get_role(guild_record.in_lobby_role.id) is not None
 
     if is_in_lobby:
         await ctx.send("You're already in the lobby.")
@@ -314,7 +321,7 @@ async def on_join_lobby_error(_, err: Exception) -> None:
             to join a call or play something without having to just sit in call.
             """)
 async def leave_lobby(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    is_in_lobby = ctx.author.get_role(IN_LOBBY_ROLE_ID) is not None
+    is_in_lobby = ctx.author.get_role(guild_record.in_lobby_role.id) is not None
 
     if not is_in_lobby:
         await ctx.send(f"{ctx.author.mention} is not in the lobby.")
