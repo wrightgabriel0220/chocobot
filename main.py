@@ -49,8 +49,6 @@ class RadioQueue(list):
         finally:
             super().append(new_audio)
 
-        self.current_song = self[len(self) - 1]
-
     def get_queue_report(self):
         if len(self) == 0:
             return "There's nothing in the queue! Use !add_song <url> to add a song"
@@ -58,6 +56,21 @@ class RadioQueue(list):
         newline = "\n"
 
         return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
+    
+    def play_next_in_queue(self, voice_client: discord.VoiceClient):
+        print(self.get_queue_report())
+        self.current_song = self[len(self) - 1]
+
+        track = discord.FFmpegPCMAudio(
+            executable = "ffmpeg.exe",
+            source = ytdl.prepare_filename(self.current_song),
+            options = ffmpeg_options,
+        )
+
+        self.pop()
+
+        if len(self) >= 0:
+            voice_client.play(track, after=lambda _: self.play_next_in_queue(voice_client))
     
 class ChocobotGuildRecord(discord.Guild):
     """A set of environmental variables storing state specific to each guild the bot is connected to"""
@@ -234,23 +247,12 @@ async def play(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: st
 
     if url is not None:
         guild_record.song_queue.append(url)
+        guild_record.song_queue.current_song = guild_record.song_queue[len(guild_record.song_queue) - 1]
 
     if voice_client.is_paused():
         voice_client.resume()
     elif not voice_client.is_playing():
-        track = discord.FFmpegPCMAudio(
-            executable = "ffmpeg.exe",
-            source = ytdl.prepare_filename(guild_record.song_queue.current_song),
-            options = ffmpeg_options,
-        )
-
-        def advance_queue(_):
-            guild_record.song_queue.pop()
-
-            if len(guild_record.song_queue) > 0:
-                voice_client.play(track, after=advance_queue)
-
-        voice_client.play(track, after=advance_queue)
+        guild_record.song_queue.play_next_in_queue(voice_client)
 
 @play.error
 async def on_play_error(ctx: commands.Context, err: Exception) -> None:
