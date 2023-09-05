@@ -126,18 +126,19 @@ def bot_command_with_registry(name: str, help: str) -> Callable:
         return inner
     return decorator
 
-def bot_event_with_registry(func: Callable) -> Callable:
-    @bot.event
-    async def inner(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState, *args, **kwargs):
-        print('test2')
+def bot_event_with_registry(func: Coroutine) -> Callable:
+    print("bot event with registry ran")
+    @wraps(func)
+    async def inner(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState, *args, **kwargs) -> None:
         guild_record = ChocobotGuildRecord.get_matching_guild_record(member.guild)
 
         if guild_record is not None:
             await func(member, before, after, guild_record, *args, **kwargs)
 
-        await func(member, before, after)
+    # The function needs to maintain its name for the listener to be called correctly
+    inner.__name__ = func.__name__
 
-    return inner
+    return bot.event(inner) 
 
 guild_registry: list[ChocobotGuildRecord] = []
 
@@ -188,15 +189,12 @@ async def on_ready():
         for guild_record in _guild_registry:
             guild_registry.append(guild_record) 
 
-    print('ready')
-
 @bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
     await guild.channels[0].send("Hi! I'm Chocobot! To use most of the commands, you'll need to run '!register' first. To learn more about '!register', use '!help register'")
 
 @bot_event_with_registry
 async def on_voice_state_update(member: discord.Member, _, after: discord.VoiceState, guild_record: ChocobotGuildRecord) -> None:
-    print("test")
     is_in_lobby = member.get_role(guild_record.in_lobby_role.id) is not None
 
     if not discord.utils.get(member.roles, name = "Chocobot"):
