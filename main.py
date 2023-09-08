@@ -1,6 +1,6 @@
 import asyncio
 from functools import wraps
-from sys import stderr
+import logging
 from typing import Callable, Coroutine, Dict
 import discord
 from discord.ext import commands
@@ -36,10 +36,17 @@ class YTDLSource(discord.PCMVolumeTransformer):
 class RadioQueue(list):
     current_song: YTDLSource
 
-    def __init__(self):
-        super().__init__(self)
+    def __init__(self, send_message: Coroutine):
+        self.send_message: Coroutine = send_message
 
-    async def append(self, url: str):
+        super().__init__(self)
+    
+    def __str__(self):
+        newline = "\n"
+
+        return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
+
+    async def append(self, url: str) -> None:
         new_audio: YTDLSource
 
         try:
@@ -48,17 +55,16 @@ class RadioQueue(list):
             _log_error(err, "RadioQueue.append")
         finally:
             super().append(new_audio)
+            await self.read_to_guild()
 
-    def get_queue_report(self):
+    async def read_to_guild(self) -> None:
         if len(self) == 0:
             return "There's nothing in the queue! Use !add_song <url> to add a song"
 
-        newline = "\n"
+        await self.send_message(str(self))
 
-        return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
-    
-    def play_next_in_queue(self, voice_client: discord.VoiceClient):
-        print(self.get_queue_report())
+    def play_next_in_queue(self, voice_client: discord.VoiceClient, _is_transitioning = False) -> None:
+        if _is_transitioning: self.pop()
         self.current_song = self[len(self) - 1]
 
         track = discord.FFmpegPCMAudio(
@@ -67,10 +73,7 @@ class RadioQueue(list):
             options = ffmpeg_options,
         )
 
-        self.pop()
-
-        if len(self) >= 0:
-            voice_client.play(track, after=lambda _: self.play_next_in_queue(voice_client))
+        voice_client.play(track, after=lambda _: self.play_next_in_queue(voice_client, _is_transitioning = True))
     
 class ChocobotGuildRecord(discord.Guild):
     """A set of environmental variables storing state specific to each guild the bot is connected to"""
@@ -82,7 +85,7 @@ class ChocobotGuildRecord(discord.Guild):
         self.name: str = guild.name
         self.guild: discord.Guild = guild
         self.bot_command_channel: discord.abc.GuildChannel = bot_command_channel
-        self.song_queue: RadioQueue = RadioQueue()
+        self.song_queue: RadioQueue = RadioQueue(send_message=self._send_message)
         self.in_lobby_role: discord.Role = in_lobby_role
     
     def to_archive_format(self) -> GuildArchiveDataEntry:
@@ -91,10 +94,14 @@ class ChocobotGuildRecord(discord.Guild):
             "bot_command_channel": self.bot_command_channel.name
         }
     
+    async def _send_message(self, msg: str) -> None:
+        await self.guild.get_channel(self.bot_command_channel.id).send(msg)
+
     @classmethod
     async def from_archive_format(cls, guild_archive_data: GuildArchiveDataEntry):
         guild: discord.Guild = discord.utils.get(bot.guilds, name=guild_archive_data.get("name"))
-        guild_record = await ChocobotGuildRecord.generate_record(guild, guild_archive_data.get("bot_command_channel"))
+        bot_command_channel: discord.abc.GuildChannel = discord.utils.get(guild.channels, name=guild_archive_data.get("bot_command_channel"))
+        guild_record = await ChocobotGuildRecord.generate_record(guild, bot_command_channel)
 
         return guild_record
     
@@ -154,7 +161,7 @@ ytdl_format_options = {
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'logtostderr': True,
-    'quiet': False,
+    'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
@@ -171,7 +178,7 @@ ffmpeg_options = {
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 def _log_error(err: Exception, tag: str = None):
-    stderr.write(
+    logging.exception(
         f"""[CHOCOBOT] There was an error at {tag}...
         {err}
         """
@@ -241,15 +248,16 @@ async def leave(ctx: commands.Context) -> None:
 
 @bot_command_with_registry(name = 'play', help = 'To play a new song, paused song, or paused queue')
 async def play(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: str = None) -> None:
-    voice_client = ctx.message.guild.voice_client
+    voice_client: discord.VoiceClient = ctx.message.guild.voice_client
 
     if url is not None:
-        guild_record.song_queue.append(url)
-        guild_record.song_queue.current_song = guild_record.song_queue[len(guild_record.song_queue) - 1]
+        await guild_record.song_queue.append(url)
 
     if voice_client.is_paused():
         voice_client.resume()
-    elif not voice_client.is_playing():
+        return
+
+    if not voice_client.is_playing():
         guild_record.song_queue.play_next_in_queue(voice_client)
 
 @play.error
@@ -263,8 +271,6 @@ async def on_play_error(ctx: commands.Context, err: Exception) -> None:
 async def add_song(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: str) -> None:
     await guild_record.song_queue.append(url)
 
-    await ctx.send(guild_record.song_queue.get_queue_report())
-
 @add_song.error
 async def on_add_song_error(_, error: Exception):
     _log_error(error, "on_add_song_error")
@@ -277,17 +283,16 @@ async def pause(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> Non
         await ctx.send("The bot is not playing anything at the moment.")
 
 @bot_command_with_registry(name = "queue", help="Display the current queue of songs up the visible queue limit")
-async def queue(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    await ctx.send(guild_record.song_queue.get_queue_report())
+async def queue(_, guild_record: ChocobotGuildRecord) -> None:
+    await guild_record.song_queue.read_to_guild()
 
 @bot_command_with_registry(name = "skip", help = "Skip the current song and begin playing the next song in the queue")
 async def skip(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    if len(guild_record.song_queue) > 1:
+    if len(guild_record.song_queue) > 0:
         await ctx.send("Skipping " + guild_record.song_queue.current_song["title"])
 
         if ctx.message.guild.voice_client.is_playing():
-            guild_record.song_queue.remove(0)
-            await play(ctx)
+            guild_record.song_queue.play_next_in_queue(voice_client=guild_record.guild.voice_client)
         else:
             guild_record.song_queue.pop()
     else:
