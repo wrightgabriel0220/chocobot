@@ -75,7 +75,7 @@ class RadioQueue(list):
 
         voice_client.play(track, after=lambda _: self.play_next_in_queue(voice_client, _is_transitioning = True))
     
-class ChocobotGuildRecord(discord.Guild):
+class ChocobotGuildRecord():
     """A set of environmental variables storing state specific to each guild the bot is connected to"""
     class GuildArchiveDataEntry(Dict):
         name: str
@@ -229,14 +229,15 @@ async def register(ctx: commands.Context) -> None:
     else:
         await ctx.send("This guild is already registered. If you need to re-register, contact whoever is running this bot.")
 
-@bot.command(name = 'join', help = 'Tells the bot to join the voice channel')
-async def join(ctx: commands.Context) -> None:
+@bot_command_with_registry(name = 'join', help = 'Tells the bot to join the voice channel')
+async def join(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
     if not ctx.message.author.voice:
-        await ctx.send(f'{ctx.message.author.name} is not connected to a voice channel')
-        return
+        await ctx.send("You must be a connected to a voice channel to invite the bot in!")
+    elif guild_record.guild.voice_client is not None:
+        await ctx.send("Chocobot is already in this voice channel!")
     else:
-        channel = ctx.message.author.voice.channel
-    await channel.connect()
+        await ctx.message.author.voice.channel.connect()
+
 
 @bot.command(name = 'leave', help = 'To make the bot leave the voice channel')
 async def leave(ctx: commands.Context) -> None:
