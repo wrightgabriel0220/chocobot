@@ -1,4 +1,4 @@
-import asyncio
+from music import Music
 from functools import wraps
 import logging
 from typing import Callable, Coroutine, Dict
@@ -16,64 +16,6 @@ COMMAND_PREFIX = os.getenv("command_prefix")
 VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
 # Setting the intents. These should match the intents on the Discord Developer Portal
 intents = discord.Intents.all()
-
-class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume = 0.5):
-        super().__init__(source, volume)
-        self.data = data
-        self.title = data.get('title')
-        self.url = ""
-
-    @classmethod
-    async def from_url(cls, url, *, loop = None, stream = False):
-        loop = loop if loop is not None else asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download = not stream))
-        if "entries" in data:
-            data = data["entries"][0]
-
-        return data
-
-class RadioQueue(list):
-    current_song: YTDLSource
-
-    def __init__(self, send_message: Coroutine):
-        self.send_message: Coroutine = send_message
-
-        super().__init__(self)
-    
-    def __str__(self):
-        newline = "\n"
-
-        return newline.join([f"{i + 1}: {self[i]['title']}" for i in range(len(self))])
-
-    async def append(self, url: str) -> None:
-        new_audio: YTDLSource
-
-        try:
-            new_audio = await YTDLSource.from_url(url)
-        except Exception as err:
-            _log_error(err, "RadioQueue.append")
-        finally:
-            super().append(new_audio)
-            await self.read_to_guild()
-
-    async def read_to_guild(self) -> None:
-        if len(self) == 0:
-            return "There's nothing in the queue! Use !add_song <url> to add a song"
-
-        await self.send_message(str(self))
-
-    def play_next_in_queue(self, voice_client: discord.VoiceClient, _is_transitioning = False) -> None:
-        if _is_transitioning: self.pop()
-        self.current_song = self[len(self) - 1]
-
-        track = discord.FFmpegPCMAudio(
-            executable = "ffmpeg.exe",
-            source = ytdl.prepare_filename(self.current_song),
-            options = ffmpeg_options,
-        )
-
-        voice_client.play(track, after=lambda _: self.play_next_in_queue(voice_client, _is_transitioning = True))
     
 class ChocobotGuildRecord():
     """A set of environmental variables storing state specific to each guild the bot is connected to"""
@@ -85,7 +27,7 @@ class ChocobotGuildRecord():
         self.name: str = guild.name
         self.guild: discord.Guild = guild
         self.bot_command_channel: discord.abc.GuildChannel = bot_command_channel
-        self.song_queue: RadioQueue = RadioQueue(send_message=self._send_message)
+        # self.song_queue: RadioQueue = RadioQueue(send_message=self._send_message)
         self.in_lobby_role: discord.Role = in_lobby_role
     
     def to_archive_format(self) -> GuildArchiveDataEntry:
@@ -186,6 +128,8 @@ def _log_error(err: Exception, tag: str = None):
 
 @bot.event
 async def on_ready():
+    await bot.add_cog(Music(bot))
+
     with open("guild_archive.json") as guild_archive_file:
         guild_archive = jsonpickle.decode(guild_archive_file.read())
 
@@ -246,58 +190,6 @@ async def leave(ctx: commands.Context) -> None:
         await voice_client.disconnect()
     else:
         await ctx.send('The bot is not connected to a voice channel.')
-
-@bot_command_with_registry(name = 'play', help = 'To play a new song, paused song, or paused queue')
-async def play(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: str = None) -> None:
-    voice_client: discord.VoiceClient = ctx.message.guild.voice_client
-
-    if url is not None:
-        await guild_record.song_queue.append(url)
-
-    if voice_client.is_paused():
-        voice_client.resume()
-        return
-
-    if not voice_client.is_playing():
-        guild_record.song_queue.play_next_in_queue(voice_client)
-
-@play.error
-async def on_play_error(ctx: commands.Context, err: Exception) -> None:
-    if not ctx.message.guild.voice_client:
-        await ctx.send(f"The bot is not connected to a voice channel. Use {COMMAND_PREFIX}join to invite the bot to a channel and try again!")
-    else:
-        _log_error(err, "_on_play_error")
-
-@bot_command_with_registry(name = 'add_song', help = 'To add a song to the front of the queue')
-async def add_song(ctx: commands.Context, guild_record: ChocobotGuildRecord, url: str) -> None:
-    await guild_record.song_queue.append(url)
-
-@add_song.error
-async def on_add_song_error(_, error: Exception):
-    _log_error(error, "on_add_song_error")
-
-@bot_command_with_registry(name = 'pause', help='Pauses the song currently playing if there is one')
-async def pause(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    if guild_record.guild.voice_client.is_playing():
-        await guild_record.guild.voice_client.pause()
-    else:
-        await ctx.send("The bot is not playing anything at the moment.")
-
-@bot_command_with_registry(name = "queue", help="Display the current queue of songs up the visible queue limit")
-async def queue(_, guild_record: ChocobotGuildRecord) -> None:
-    await guild_record.song_queue.read_to_guild()
-
-@bot_command_with_registry(name = "skip", help = "Skip the current song and begin playing the next song in the queue")
-async def skip(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    if len(guild_record.song_queue) > 0:
-        await ctx.send("Skipping " + guild_record.song_queue.current_song["title"])
-
-        if ctx.message.guild.voice_client.is_playing():
-            guild_record.song_queue.play_next_in_queue(voice_client=guild_record.guild.voice_client)
-        else:
-            guild_record.song_queue.pop()
-    else:
-        await ctx.send("There's nothing in the queue to skip.")
 
 @bot_command_with_registry(name = "join_lobby", help = """
              Join the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
