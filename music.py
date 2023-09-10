@@ -173,7 +173,7 @@ class Music(commands.Cog):
     async def play(self, ctx: commands.Context, *, query: str):
         """ Searches and plays a song from a given query. """
         # Get the player for this guild from cache.
-        player = self.bot.lavalink.player_manager.get(ctx.guild.id)
+        player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
         # Remove leading and trailing <>. <> may be used to suppress embedding links in Discord.
         query = query.strip('<>')
 
@@ -214,17 +214,18 @@ class Music(commands.Cog):
             track_select_embed.title = "Select Song"
             track_select_embed.description = f"""
                 Send the number corresponding to the track you want to play.
+
                 {newline.join([f'{iter + 1}: {tracks[iter].title}' for iter in range(0, 5)])}
             """
 
             bot: discord.Client = ctx.bot
             await ctx.send(embed=track_select_embed)
             response: discord.Message = await bot.wait_for(
-                "message", check=lambda msg: int(msg.content) in range(0, 5)
+                "message", check=lambda msg: int(msg.content) in range(1, 6),
             )
-            target_track_number: int = int(response.content)
+            #* Converting this target track number to an index for the tracks list
+            target_track_number = int(response.content) - 1
             track = tracks[target_track_number]
-
 
             embed.title = 'Track Enqueued'
             embed.description = f'[{track.title}]({track.uri})'
@@ -237,6 +238,22 @@ class Music(commands.Cog):
         # the current track.
         if not player.is_playing:
             await player.play()
+
+    @commands.command()
+    async def queue(self, ctx: commands.Context):
+        """ Reads out the current queue """
+        newline = "\n"
+
+        player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+
+        embed = discord.Embed(color=discord.Color.blurple)
+
+        embed.title = "Queue"
+        embed.description = f"1: {player.current.title}\n" + newline.join(
+            [f"{iter}: {track.title}\n" for iter, track in enumerate(player.queue[1:])]
+        )
+        
+        await ctx.send(embed=embed)
 
     @commands.command(aliases=['lp'])
     async def lowpass(self, ctx, strength: float):

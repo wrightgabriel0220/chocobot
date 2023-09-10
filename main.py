@@ -76,7 +76,6 @@ def bot_command_with_registry(name: str, help: str) -> Callable:
     return decorator
 
 def bot_event_with_registry(func: Coroutine) -> Callable:
-    print("bot event with registry ran")
     @wraps(func)
     async def inner(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState, *args, **kwargs) -> None:
         guild_record = ChocobotGuildRecord.get_matching_guild_record(member.guild)
