@@ -13,7 +13,7 @@ import re
 import discord
 import lavalink
 from discord.ext import commands
-from lavalink.filters import LowPass
+from lavalink.filters import LowPass, Vibrato
 
 url_rx = re.compile(r'https?://(?:www\.)?.+')
 
@@ -261,15 +261,46 @@ class Music(commands.Cog):
         embed = discord.Embed(color=discord.Color.blurple())
 
         embed.title = "Queue"
-        embed.description = f"1: {player.current.title}\n" + newline.join(
-            [f"{iter}: {track.title}\n" for iter, track in enumerate(player.queue[1:])]
-        )
+        embed.description = f"""1: {player.current.title}
+            {newline.join(
+                [f"{iter + 2}: {track.title}" for iter, track in enumerate(player.queue[::])]
+            )}
+        """
         
         await ctx.send(embed=embed)
 
+    @commands.command(aliases=['vb'])
+    async def vibrato(self, ctx, frequency: float):
+        """ Sets the frequency (0-14) and depth (0-1) of the vibrato filter. """
+        # Get the player for this guild from cache.
+        player = self.bot.lavalink.player_manager.get(ctx.guild.id)
+
+        frequency = max(0.0, frequency)
+        frequency = min(14.0, frequency)
+        depth = 1
+
+        embed = discord.Embed(color=discord.Color.blurple(), title='Vibrato')
+
+        # A frequency of 0 effectively means this filter won't function, so we can disable it.
+        if frequency == 0.0:
+            await player.remove_filter('vibrato')
+            embed.description = 'Disabled **Vibrato Filter**'
+            return await ctx.send(embed=embed)
+
+        # Lets create our filter.
+        vibrato = Vibrato()
+        vibrato.update(frequency=frequency, depth=depth)  # Set the filter frequency to the user's desired level.
+
+        # This applies our filter. If the filter is already enabled on the player, then this will
+        # just overwrite the filter with the new values.
+        await player.set_filter(vibrato)
+
+        embed.description = f'Set **Vibrato** frequency to {frequency}.'
+        await ctx.send(embed=embed)
+    
     @commands.command(aliases=['lp'])
     async def lowpass(self, ctx, strength: float):
-        """ Sets the strength of the low pass filter. """
+        """ Sets the strength (0-100)of the low pass filter. """
         # Get the player for this guild from cache.
         player = self.bot.lavalink.player_manager.get(ctx.guild.id)
 
