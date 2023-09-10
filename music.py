@@ -17,7 +17,6 @@ from lavalink.filters import LowPass
 
 url_rx = re.compile(r'https?://(?:www\.)?.+')
 
-
 class LavalinkVoiceClient(discord.VoiceClient):
     """
     This is the preferred way to handle external voice sending
@@ -89,7 +88,6 @@ class LavalinkVoiceClient(discord.VoiceClient):
         # to None doesn't get dispatched after the disconnect
         player.channel_id = None
         self.cleanup()
-
 
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -239,7 +237,7 @@ class Music(commands.Cog):
         if not player.is_playing:
             await player.play()
 
-    @commands.command()
+    @commands.command(aliases=['q'])
     async def queue(self, ctx: commands.Context):
         """ Reads out the current queue """
         newline = "\n"
@@ -310,7 +308,6 @@ class Music(commands.Cog):
         # Disconnect from the voice channel.
         await ctx.voice_client.disconnect(force=True)
         await ctx.send('*⃣ | Disconnected.')
-
 
 def setup(bot):
     bot.add_cog(Music(bot))
