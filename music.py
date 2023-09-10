@@ -91,7 +91,7 @@ class LavalinkVoiceClient(discord.VoiceClient):
 
 class Music(commands.Cog):
     def __init__(self, bot):
-        self.bot = bot
+        self.bot: discord.Client = bot
 
         if not hasattr(bot, 'lavalink'):  # This ensures the client isn't overwritten during cog reloads.
             bot.lavalink = lavalink.Client(bot.user.id)
@@ -167,13 +167,27 @@ class Music(commands.Cog):
             guild = self.bot.get_guild(guild_id)
             await guild.voice_client.disconnect(force=True)
 
-    @commands.command(aliases=['p'])
-    async def play(self, ctx: commands.Context, *, query: str):
+    @commands.command(aliases=['ps'])
+    async def pause(self, ctx: commands.Context):
+        player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+
+        embed = discord.Embed(color = discord.Color.blurple())
+
+        embed.title = "Radio Paused"
+        await player.set_pause(True)
+        await ctx.send(embed=embed)
+
+    @commands.command(aliases=['pl'])
+    async def play(self, ctx: commands.Context, *, query: str = "") -> None:
         """ Searches and plays a song from a given query. """
+
         # Get the player for this guild from cache.
         player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
         # Remove leading and trailing <>. <> may be used to suppress embedding links in Discord.
         query = query.strip('<>')
+
+        await player.set_pause(False)
+        if query == "": return
 
         # Check if the user input might be a URL. If it isn't, we can Lavalink do a YouTube search for it instead.
         # SoundCloud searching is possible by prefixing "scsearch:" instead.
@@ -244,7 +258,7 @@ class Music(commands.Cog):
 
         player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
 
-        embed = discord.Embed(color=discord.Color.blurple)
+        embed = discord.Embed(color=discord.Color.blurple())
 
         embed.title = "Queue"
         embed.description = f"1: {player.current.title}\n" + newline.join(
