@@ -323,5 +323,11 @@ class Music(commands.Cog):
         await ctx.voice_client.disconnect(force=True)
         await ctx.send('*⃣ | Disconnected.')
 
+    @commands.command(aliases=['sk'])
+    async def skip(self, ctx: commands.Context):
+        player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+
+        await player.skip()
+
 def setup(bot):
     bot.add_cog(Music(bot))
