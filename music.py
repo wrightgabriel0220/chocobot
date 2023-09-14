@@ -268,10 +268,18 @@ class Music(commands.Cog):
         """
         
         await ctx.send(embed=embed)
+    
+    @commands.command(aliases=['cl'])
+    async def clear(self, ctx: commands.Context):
+        """ Clears all tracks from the queue"""
+        player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
+
+        player.queue.clear()
+        await ctx.send(embed=discord.Embed(color=discord.Color.blurple(), description="Queue cleared!"))
 
     @commands.command(aliases=['vb'])
     async def vibrato(self, ctx, frequency: float):
-        """ Sets the frequency (0-14) and depth (0-1) of the vibrato filter. """
+        """ Sets the frequency (0-14) of the vibrato filter. """
         # Get the player for this guild from cache.
         player = self.bot.lavalink.player_manager.get(ctx.guild.id)
 
