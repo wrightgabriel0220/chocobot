@@ -172,24 +172,6 @@ async def register(ctx: commands.Context) -> None:
     else:
         await ctx.send("This guild is already registered. If you need to re-register, contact whoever is running this bot.")
 
-@bot_command_with_registry(name = 'join', help = 'Tells the bot to join the voice channel')
-async def join(ctx: commands.Context, guild_record: ChocobotGuildRecord) -> None:
-    if not ctx.message.author.voice:
-        await ctx.send("You must be a connected to a voice channel to invite the bot in!")
-    elif guild_record.guild.voice_client is not None:
-        await ctx.send("Chocobot is already in this voice channel!")
-    else:
-        await ctx.message.author.voice.channel.connect()
-
-
-@bot.command(name = 'leave', help = 'To make the bot leave the voice channel')
-async def leave(ctx: commands.Context) -> None:
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_connected():
-        await voice_client.disconnect()
-    else:
-        await ctx.send('The bot is not connected to a voice channel.')
-
 @bot_command_with_registry(name = "join_lobby", help = """
              Join the server LFG 'lobby'. LFG lobbies are just a way to indicate to other folks that you're looking
              to join a call or play something without having to just sit in call. When somebody joins the lobby while you're

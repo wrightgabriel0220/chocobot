@@ -169,6 +169,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['ps'])
     async def pause(self, ctx: commands.Context):
+        """Pauses the current track until the play command is used again. """
         player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
 
         embed = discord.Embed(color = discord.Color.blurple())
@@ -308,7 +309,7 @@ class Music(commands.Cog):
     
     @commands.command(aliases=['lp'])
     async def lowpass(self, ctx, strength: float):
-        """ Sets the strength (0-100)of the low pass filter. """
+        """ Sets the strength (0-100) of the low pass filter. """
         # Get the player for this guild from cache.
         player = self.bot.lavalink.player_manager.get(ctx.guild.id)
 
@@ -364,6 +365,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['sk'])
     async def skip(self, ctx: commands.Context):
+        """Skips the currently playing track. If this is the last track in the queue, this will end playback."""
         player: lavalink.DefaultPlayer = self.bot.lavalink.player_manager.get(ctx.guild.id)
 
         await player.skip()
