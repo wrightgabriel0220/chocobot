@@ -220,7 +220,7 @@ class Music(commands.Cog):
 
             embed.title = 'Playlist Enqueued!'
             embed.description = f'{results.playlist_info.name} - {len(tracks)} tracks'
-        else:
+        elif results.load_type == "SEARCH_RESULT":
             newline = '\n'
 
             track_select_embed = discord.Embed(color=discord.Color.blurple())
@@ -243,6 +243,8 @@ class Music(commands.Cog):
             embed.title = 'Track Enqueued'
             embed.description = f'[{track.title}]({track.uri})'
 
+            player.add(requester=ctx.author.id, track=track)
+        else:
             player.add(requester=ctx.author.id, track=track)
 
         await ctx.send(embed=embed)
