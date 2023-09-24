@@ -1,4 +1,4 @@
-from cogs.music import Music
+from music import Music
 from functools import wraps
 import logging
 from typing import Callable, Coroutine, Dict
