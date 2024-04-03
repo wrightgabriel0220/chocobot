@@ -1,0 +1,20 @@
+services:
+  chocobot:
+    image: ghcr.io/wrightgabriel0220/chocobot:latest
+    container_name: chocobot_discord_community_assistant
+    restart: unless-stopped
+    environment:
+      - COMMAND_PREFIX="!"
+      - VISIBLE_PLAYLIST_QUEUE_LENGTH=6
+    env_file:
+      - ./.env
+  lavalink:
+    # pin the image version to Lavalink v4
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: lavalink
+    restart: unless-stopped
+    environment:
+      - _JAVA_OPTIONS=-Xmx6G
+      - SERVER_PORT=2333
+    env_file:
+      - ./.env

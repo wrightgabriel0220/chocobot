@@ -1,0 +1,5 @@
+discord
+lavalink
+python-dotenv
+jsonpickle
+yt_dlp
