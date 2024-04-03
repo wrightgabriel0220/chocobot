@@ -7,7 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py ./
 COPY music.py ./
-COPY .env ./
-COPY application.yml ./
+COPY guild_archive.example.json ./guild_archive.json
 
-CMD [ "python", "./main.py" ]
+CMD [ "python", "-u", "./main.py" ]

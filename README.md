@@ -17,7 +17,7 @@ Chocobot started as just a simple Discord bot for playing music, but has come to
     for an existing bot
 
 ### Installation
-Inside of your terminal, clone down this repository using Git, then navigate into it. From the root directory, run `docker compose up` to run the services in the included `docker-compose.yml` file.
+Inside of your terminal, clone down this repository using Git, then navigate into it. From the root directory, copy the .env.example file and fill in the environment variables, then run `docker compose up` to run the services in the included `docker-compose.yml` file.
 
 ## License
 [The Unlicense](https://github.com/wrightgabriel0220/chocobot/UNLICENSE.txt)

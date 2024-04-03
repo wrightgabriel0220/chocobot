@@ -12,10 +12,18 @@ import re
 
 import discord
 import lavalink
+import os
 from discord.ext import commands
 from lavalink.filters import LowPass, Vibrato
+from dotenv import load_dotenv
+
+LAVALINK_SERVER_PASSWORD = os.getenv("LAVALINK_SERVER_PASSWORD")
+LAVALINK_SERVER_PORT = os.getenv("LAVALINK_SERVER_PORT")
+LAVALINK_SERVER_HOST = os.getenv("LAVALINK_SERVER_HOST")
 
 url_rx = re.compile(r'https?://(?:www\.)?.+')
+
+load_dotenv()
 
 class LavalinkVoiceClient(discord.VoiceClient):
     """
@@ -34,9 +42,9 @@ class LavalinkVoiceClient(discord.VoiceClient):
         else:
             self.client.lavalink = lavalink.Client(client.user.id)
             self.client.lavalink.add_node(
-                'localhost',
-                2333,
-                'youshallnotpass',
+                LAVALINK_SERVER_HOST,
+                LAVALINK_SERVER_PORT,
+                LAVALINK_SERVER_PASSWORD,
                 'us',
                 'default-node'
             )
@@ -95,9 +103,8 @@ class Music(commands.Cog):
 
         if not hasattr(bot, 'lavalink'):  # This ensures the client isn't overwritten during cog reloads.
             bot.lavalink = lavalink.Client(bot.user.id)
-            bot.lavalink.add_node(host="127.0.0.1", port=2333, password="youshallnotpass", region="us")  # Host, Port, Password, Region, Name
-
-        lavalink.add_event_hook(self.track_hook)
+            bot.lavalink.add_node(host=LAVALINK_SERVER_HOST, port=LAVALINK_SERVER_PORT, password=LAVALINK_SERVER_PASSWORD, region="us")  # Host, Port, Password, Region, Name
+            bot.lavalink.add_event_hook(self.track_hook)
 
     def cog_unload(self):
         """ Cog unload handler. This removes any event hooks that were registered. """
@@ -201,6 +208,8 @@ class Music(commands.Cog):
         # Results could be None if Lavalink returns an invalid response (non-JSON/non-200 (OK)).
         # Alternatively, results.tracks could be an empty array if the query yielded no tracks.
         if not results or not results.tracks:
+            if results.load_type == 'ERROR':
+                print(f'Lavalink threw an error from the query "{query}": [SEV{results.error.severity}] -- {results.error.message}')
             return await ctx.send('Nothing found!')
 
         embed = discord.Embed(color=discord.Color.blurple())

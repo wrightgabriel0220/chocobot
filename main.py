@@ -11,9 +11,9 @@ import yt_dlp
 
 load_dotenv()
 
-DISCORD_TOKEN = os.getenv("discord_token")
-COMMAND_PREFIX = os.getenv("command_prefix")
-VISIBLE_QUEUE_LENGTH = os.getenv("visible_queue_length")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+COMMAND_PREFIX = os.getenv("COMMAND_PREFIX")
+VISIBLE_QUEUE_LENGTH = os.getenv("VISIBLE_QUEUE_LENGTH")
 # Setting the intents. These should match the intents on the Discord Developer Portal
 intents = discord.Intents.all()
     
