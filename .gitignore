@@ -162,3 +162,4 @@ cython_debug/
 youtube*
 *.webm
 guild_archive.json
+lavalink/application.yml

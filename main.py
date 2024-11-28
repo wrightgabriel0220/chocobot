@@ -120,7 +120,8 @@ ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 def _log_error(err: Exception, tag: str = None):
     logging.exception(
-        f"""[CHOCOBOT] There was an error at {tag}...
+        f"""
+        [CHOCOBOT] There was an error at {tag}...
         {err}
         """
     )
@@ -141,6 +142,7 @@ async def on_ready():
 
 @bot.event
 async def on_guild_join(guild: discord.Guild) -> None:
+    print("guild.channels[0]: ", guild.channels[0])
     await guild.channels[0].send("Hi! I'm Chocobot! To use most of the commands, you'll need to run '!register' first. To learn more about '!register', use '!help register'")
 
 @bot_event_with_registry

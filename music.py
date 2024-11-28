@@ -197,13 +197,15 @@ class Music(commands.Cog):
         await player.set_pause(False)
         if query == "": return
 
-        # Check if the user input might be a URL. If it isn't, we can Lavalink do a YouTube search for it instead.
+        # Check if the user input might be a URL. If it isn't, we can have Lavalink do a YouTube search for it instead.
         # SoundCloud searching is possible by prefixing "scsearch:" instead.
         if not url_rx.match(query):
             query = f'ytsearch:{query}'
 
         # Get the results for the query from Lavalink.
         results = await player.node.get_tracks(query)
+
+        print("results: ", results)
 
         # Results could be None if Lavalink returns an invalid response (non-JSON/non-200 (OK)).
         # Alternatively, results.tracks could be an empty array if the query yielded no tracks.
@@ -221,6 +223,8 @@ class Music(commands.Cog):
         #   NO_MATCHES      - query yielded no results
         #   LOAD_FAILED     - most likely, the video encountered an exception during loading.
         tracks: list[lavalink.AudioTrack] = results.tracks
+
+        print("[DEBUG]: results.load_type: ", results.load_type)
 
         if results.load_type == 'PLAYLIST_LOADED':
             for track in tracks:
@@ -254,7 +258,14 @@ class Music(commands.Cog):
 
             player.add(requester=ctx.author.id, track=track)
         else:
-            player.add(requester=ctx.author.id, track=track)
+            track = tracks[0]
+
+            print("[DEBUG]: track: ", track)
+
+            embed.title = track.title
+            embed.description = ""
+
+            player.add(track=track, )
 
         await ctx.send(embed=embed)
 
